@@ -1,0 +1,145 @@
+name: Android APK
+
+# Builds the arm64 APK the same way as docs/android/BUILDING.md: on Windows
+# with Git Bash, NDK r29, the bundled Turnip driver and the stripped
+# (~50 MB) libraries. The APK is uploaded as a workflow artifact.
+# By default the native code targets the Snapdragon 8 Gen 3 (ANDROID_CPU=
+# sm8650, see build_native.sh); that APK does not start on ARMv8.2 chips.
+
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'README*'
+      - 'LICENSE*'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Native build type'
+        type: choice
+        options: [RelWithDebInfo, Release]
+        default: RelWithDebInfo
+      android_cpu:
+        description: 'CPU target: sm8650 = Snapdragon 8 Gen 3 / Galaxy S24 (ARMv8.6), generic = every ARMv8.2 device'
+        type: choice
+        options: [sm8650, generic]
+        default: sm8650
+      strip:
+        description: 'Strip native libraries (smaller APK, no symbols for crash backtraces)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NDK_VER: 29.0.14206865
+  BUILD_TYPE: ${{ inputs.build_type || 'RelWithDebInfo' }}
+  # Tuned for the Galaxy S24+ (Snapdragon 8 Gen 3) unless chosen otherwise.
+  ANDROID_CPU: ${{ inputs.android_cpu || 'sm8650' }}
+  STRIP: ${{ (github.event_name == 'workflow_dispatch' && !inputs.strip && '0') || '1' }}
+
+jobs:
+  apk:
+    name: Build APK (arm64-v8a)
+    runs-on: windows-latest
+    # The first native build compiles ~90 very large generated sources.
+    timeout-minutes: 350
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install CMake and Ninja
+        run: python -m pip install "cmake==3.31.6" "ninja==1.11.1.4"
+
+      - name: Install Android SDK platform and NDK
+        shell: pwsh
+        run: |
+          $sdkmanager = Join-Path $env:ANDROID_HOME 'cmdline-tools\latest\bin\sdkmanager.bat'
+          "y`n" * 20 | & $sdkmanager --licenses | Out-Null
+          & $sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;$env:NDK_VER" | Select-Object -Last 5
+
+      # The build scripts expect Git Bash style paths (as env.sh derives them
+      # on a developer machine), not C:\... ones.
+      - name: Export POSIX tool paths
+        run: |
+          echo "ANDROID_HOME=$(cygpath -u "$ANDROID_HOME")" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$(cygpath -u "$ANDROID_HOME")" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=$(cygpath -u "$ANDROID_HOME")/ndk/$NDK_VER" >> "$GITHUB_ENV"
+          echo "JAVA_HOME=$(cygpath -u "$JAVA_HOME")" >> "$GITHUB_ENV"
+
+      - name: Show toolchain versions
+        run: |
+          python --version
+          cmake --version | head -1
+          ninja --version
+          "$JAVA_HOME/bin/java" -version 2>&1 | head -1
+          ls "$ANDROID_NDK" | head -3
+
+      - name: Prepare pinned dependencies and patches
+        run: python tools/setup_repo.py
+
+      # A fixed debug key, so each new CI build installs over the previous one
+      # without uninstalling (which would delete the installed game and saves).
+      - name: Restore debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
+      - name: Build Vulkan driver proxy
+        run: bash os/android/scripts/build_driver_proxy.sh
+
+      - name: Build native libraries
+        # Default jobs = CPUs - 2; the generated sources need a lot of memory each.
+        run: bash os/android/scripts/build_native.sh
+
+      - name: Package APK
+        run: |
+          rm -f os/android/app/build/outputs/apk/debug/app-debug.apk
+          bash os/android/scripts/build_apk.sh debug
+
+      - name: Name the APK
+        id: name
+        run: |
+          version=$(sed -n 's/.*versionName *= *"\(.*\)".*/\1/p' os/android/app/build.gradle.kts)
+          name="LibertyRecompAndroid-${version}-${ANDROID_CPU}-${GITHUB_SHA::7}"
+          mkdir -p dist
+          cp os/android/app/build/outputs/apk/debug/app-debug.apk "dist/$name.apk"
+          ls -la dist
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.name.outputs.name }}
+          path: dist/*.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
