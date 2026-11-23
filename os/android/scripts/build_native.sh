@@ -17,8 +17,24 @@ python "$APP_DIR/scripts/materialize_symlinks.py"
 # Snapdragon 865 and every Android 10+ arm64 device we target are ARMv8.2:
 # inline LSE atomics instead of outline-atomic calls, and native ELF TLS
 # (API 29+) instead of emulated TLS. Both are hot in the guest thread.
-CPU_FLAGS="-march=armv8.2-a -fno-emulated-tls"
-if [ ! -f "$BUILD_DIR/build.ninja" ] || ! grep -q -- "-fno-emulated-tls" "$BUILD_DIR/CMakeCache.txt"; then
+#
+# ANDROID_CPU picks the instruction set:
+#   generic  ARMv8.2-A, runs on every supported device (default).
+#   sm8650   Snapdragon 8 Gen 3 (Galaxy S24 family): ARMv8.6-A, scheduled for
+#            the Cortex-X4. Acquire loads become LDAPR (RCpc) instead of LDAR,
+#            and the newer scalar/SIMD instructions are available. Do NOT use
+#            armv9-a: clang then emits SVE2, which these kernels do not expose
+#            (no sve/sve2 in the hwcaps), so the game dies with SIGILL.
+#            The APK no longer starts on ARMv8.2-only chips such as the SD 865.
+case "${ANDROID_CPU:-generic}" in
+  generic) CPU_FLAGS="-march=armv8.2-a -fno-emulated-tls" ;;
+  sm8650)  CPU_FLAGS="-march=armv8.6-a -mtune=cortex-x4 -fno-emulated-tls" ;;
+  *) echo "!! unknown ANDROID_CPU '${ANDROID_CPU}' (generic | sm8650)"; exit 1 ;;
+esac
+echo "== CPU target ${ANDROID_CPU:-generic}: $CPU_FLAGS"
+# Reconfigure when the flags differ from the cached ones; a changed CPU target
+# rebuilds everything.
+if [ ! -f "$BUILD_DIR/build.ninja" ] || ! grep -qxF -- "CMAKE_CXX_FLAGS:STRING=$CPU_FLAGS" "$BUILD_DIR/CMakeCache.txt"; then
   echo "== configuring $BUILD_TYPE in $BUILD_DIR"
   cmake -S "$REPO" -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_C_FLAGS="$CPU_FLAGS" \

@@ -57,6 +57,10 @@ Notes:
   megabytes of dead space in it.
 - Leave `STRIP` unset for development builds. Unstripped libraries let `ndk-stack`,
   `os/android/scripts/symbolize.sh` and simpleperf resolve symbols.
+- `ANDROID_CPU=sm8650` builds for the Snapdragon 8 Gen 3 (Galaxy S24 family): ARMv8.6-A tuned
+  for the Cortex-X4, instead of the default `generic` ARMv8.2-A. That APK does not start on older
+  chips such as the Snapdragon 865. `armv9-a` is deliberately not used: it emits SVE2, which these
+  phones' kernels do not expose. The GitHub Actions workflow builds `sm8650` by default.
 - The build type defaults to `RelWithDebInfo` (`BUILD_TYPE=Release` builds into a separate
   folder).
 - `-DLIBERTY_ANDROID_PGO=generate` / `=<profile.profdata>` in `build_native.sh`'s configure step

@@ -3,6 +3,8 @@ name: Android APK
 # Builds the arm64 APK the same way as docs/android/BUILDING.md: on Windows
 # with Git Bash, NDK r29, the bundled Turnip driver and the stripped
 # (~50 MB) libraries. The APK is uploaded as a workflow artifact.
+# By default the native code targets the Snapdragon 8 Gen 3 (ANDROID_CPU=
+# sm8650, see build_native.sh); that APK does not start on ARMv8.2 chips.
 
 on:
   push:
@@ -20,6 +22,11 @@ on:
         type: choice
         options: [RelWithDebInfo, Release]
         default: RelWithDebInfo
+      android_cpu:
+        description: 'CPU target: sm8650 = Snapdragon 8 Gen 3 / Galaxy S24 (ARMv8.6), generic = every ARMv8.2 device'
+        type: choice
+        options: [sm8650, generic]
+        default: sm8650
       strip:
         description: 'Strip native libraries (smaller APK, no symbols for crash backtraces)'
         type: boolean
@@ -35,6 +42,8 @@ concurrency:
 env:
   NDK_VER: 29.0.14206865
   BUILD_TYPE: ${{ inputs.build_type || 'RelWithDebInfo' }}
+  # Tuned for the Galaxy S24+ (Snapdragon 8 Gen 3) unless chosen otherwise.
+  ANDROID_CPU: ${{ inputs.android_cpu || 'sm8650' }}
   STRIP: ${{ (github.event_name == 'workflow_dispatch' && !inputs.strip && '0') || '1' }}
 
 jobs:
@@ -120,7 +129,7 @@ jobs:
         id: name
         run: |
           version=$(sed -n 's/.*versionName *= *"\(.*\)".*/\1/p' os/android/app/build.gradle.kts)
-          name="LibertyRecompAndroid-${version}-${GITHUB_SHA::7}"
+          name="LibertyRecompAndroid-${version}-${ANDROID_CPU}-${GITHUB_SHA::7}"
           mkdir -p dist
           cp os/android/app/build/outputs/apk/debug/app-debug.apk "dist/$name.apk"
           ls -la dist
