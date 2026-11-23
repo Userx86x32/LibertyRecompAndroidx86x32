@@ -15,11 +15,7 @@ Mesa Turnip driver. There is no emulator in between.
 
 **DISCLAIMER!**
 
-# !!! THIS PROJECT IS ON HIATUS.
-
-## No updates for now. Got no time for it due to IRL stuff. Thanks for checking this out and for testing! From now on please, stick to forks and/or try to fork it yourself, with Claude it's actually quite easy to make this work better. I kinda achieved what I've wanted from this project -- this runs on my device quite OK (like on X360 that it was released for), so I'm stepping down for now. Thanks and bye!
-
-### - vaduur
+Userx86x32 Note: Original dev vaduur has stopped development after reaching what they consider an acceptable level of playability. This is for me to optimize for my target device.
 
 This is pure 100% AI slop. I didn't made this by hand at all, it's all thanks to Claude and I, vaduur, take ZERO credit or responsibility of this port being unstable. It will run shitty, that's a guarantee. All I did is spent couple of sleepless night testing and pointing out the issues. Oh, yeah, and spent some pocket change on Claude sub ofc. Please be aware of it and feel free to fork this repo or use it as a reference in your future ReXGlue to Android ports. Thank you and have a nice day.
 
