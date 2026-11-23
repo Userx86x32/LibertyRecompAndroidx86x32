@@ -42,10 +42,10 @@
 REXCVAR_DEFINE_BOOL(android_perf_hint, true, "GTA IV/Performance",
                     "Report each frame's work to Android's performance hint API so the CPU "
                     "clocks follow the frame budget instead of running at the maximum");
-REXCVAR_DEFINE_DOUBLE(android_perf_hint_target_ms, 30.0, "GTA IV/Performance",
-                      "Work time per frame the performance hint asks for (a margin below the "
-                      "33.3 ms of 30 FPS)")
-    .range(8.0, 33.0);
+REXCVAR_DEFINE_DOUBLE(android_perf_hint_target_ms, 0.0, "GTA IV/Performance",
+                      "Work time per frame the performance hint asks for. 0 follows the frame "
+                      "limit: 90% of its frame time (30 ms at 30 FPS, 15 ms at 60 FPS)")
+    .range(0.0, 33.0);
 REXCVAR_DEFINE_BOOL(android_thermal_guard, false, "GTA IV/Performance",
                     "Lower the draw distance when Android forecasts thermal throttling and "
                     "restore it after the device has cooled down");
@@ -59,8 +59,29 @@ REXCVAR_DEFINE_DOUBLE(android_thermal_guard_cool_c, 68.0, "GTA IV/Performance",
     .range(40.0, 100.0);
 
 REXCVAR_DECLARE(double, gta4_draw_distance_scale);
+REXCVAR_DECLARE(uint32_t, gta4_frame_limit);
 
 namespace {
+
+// One frame at the current frame limit. Unlocked (0) is budgeted as 60 FPS:
+// the hint needs some deadline, and 60 is the panel rate most devices run.
+// Above 30 FPS a fixed 33.3 ms period and 30 ms target would tell the system
+// that a 20 ms frame has headroom, so it would lower the clocks and keep the
+// game from ever reaching 40 or 60 FPS on a device fast enough for them.
+std::chrono::nanoseconds FramePeriod() {
+  uint32_t fps = REXCVAR_GET(gta4_frame_limit);
+  if (fps == 0) fps = 60;
+  fps = std::clamp<uint32_t>(fps, 20, 240);
+  return std::chrono::nanoseconds(1'000'000'000 / fps);
+}
+
+// The work target the hint asks for: the explicit cvar if set, otherwise 90%
+// of the frame period (the same margin as the old fixed 30 ms at 30 FPS).
+int64_t TargetWorkNanoseconds(std::chrono::nanoseconds period) {
+  const double explicit_ms = REXCVAR_GET(android_perf_hint_target_ms);
+  if (explicit_ms > 0.0) return int64_t(explicit_ms * 1e6);
+  return int64_t(double(period.count()) * 0.9);
+}
 
 using APerformanceHintManager = struct APerformanceHintManager;
 using APerformanceHintSession = struct APerformanceHintSession;
@@ -154,7 +175,7 @@ void PowerLoop() {
                       manager ? "available" : "unavailable", thermal ? "available" : "unavailable");
 
   using Clock = std::chrono::steady_clock;
-  constexpr auto kPeriod = std::chrono::microseconds(33333);
+  auto period = FramePeriod();
   constexpr auto kRankInterval = std::chrono::seconds(2);
   APerformanceHintSession* session = nullptr;
   std::vector<pid_t> threads;
@@ -162,7 +183,7 @@ void PowerLoop() {
   std::unordered_map<pid_t, int64_t> rank_times;
   int64_t target_ns = 0;
   auto next_rank = Clock::now();
-  auto next_tick = Clock::now() + kPeriod;
+  auto next_tick = Clock::now() + period;
   auto next_log = Clock::now() + std::chrono::seconds(10);
   float headroom = __builtin_nanf("");
   float gpu_temperature = __builtin_nanf("");
@@ -173,8 +194,11 @@ void PowerLoop() {
   for (;;) {
     std::this_thread::sleep_until(next_tick);
     const auto now = Clock::now();
-    next_tick += kPeriod;
-    if (next_tick < now) next_tick = now + kPeriod;  // fell behind (suspended): resynchronize
+    // Each report covers one frame, so the period follows the frame limit
+    // (which the settings menu and live_cvars.txt can change mid-game).
+    period = FramePeriod();
+    next_tick += period;
+    if (next_tick < now) next_tick = now + period;  // fell behind (suspended): resynchronize
 
     const bool enabled = manager && REXCVAR_GET(android_perf_hint);
     if (!enabled && session) {
@@ -192,7 +216,7 @@ void PowerLoop() {
         thread_times.assign(threads.size(), -1);
         if (!threads.empty()) {
           std::vector<int32_t> ids(threads.begin(), threads.end());
-          target_ns = int64_t(REXCVAR_GET(android_perf_hint_target_ms) * 1e6);
+          target_ns = TargetWorkNanoseconds(period);
           session = api.create_session(manager, ids.data(), ids.size(), target_ns);
         }
       }
@@ -230,7 +254,7 @@ void PowerLoop() {
     }
 
     if (session) {
-      const int64_t wanted = int64_t(REXCVAR_GET(android_perf_hint_target_ms) * 1e6);
+      const int64_t wanted = TargetWorkNanoseconds(period);
       if (wanted != target_ns) {
         target_ns = wanted;
         api.update_target(session, target_ns);

@@ -121,6 +121,7 @@ panel, with FSR's sharpening look.
 | `--gta4_native_shadow_min_indices=0` | Default 0 (off). Skips draws with fewer indices than this in the shadow map passes. Small objects lose their shadows. Live. |
 | `--gta4_native_vertex_cache_order=true` | Default on. Reorders triangles of opaque draws for the GPU vertex cache on a background thread. Same image, slightly less GPU time. Live. |
 | `--android_pin_hot_threads=false` | Default off. Keeps the busiest threads on the big CPU cores. It made those threads faster on the Retroid Pocket 5 but did not raise the frame rate. Live. |
+| `--android_perf_hint_target_ms=0` | Default 0: the CPU time per frame that Android's performance hint aims for follows `--gta4_frame_limit` (90% of a frame: 30 ms at 30 FPS, 22.5 ms at 40, 15 ms at 60). Before, it was fixed at 30 ms, so on a device fast enough for 40 or 60 FPS the system lowered the CPU clocks instead of raising them. A value up to 33 sets the target by hand. Live. |
 | `--install_game_source=PATH` / `--install_update_source=PATH` | Installation sources, instead of the `install/` folder. |
 | `--audio_maxqframes=32` | Audio blocks queued ahead of playback (1-64, each ~5.3 ms), which is also the audio delay. Default 32 (~170 ms) on Android since 0.5.7.7; it was 64 (~340 ms behind the picture). 16 (~85 ms) is tighter but can stutter during frame hitches on slower devices; raise it if the sound crackles. *Restart.* |
 | `--touch_controls=auto` | On-screen controls. `auto` shows them whenever no gamepad is connected, `on` always shows them, `off` never does. |
