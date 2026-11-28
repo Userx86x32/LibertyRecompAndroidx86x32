@@ -10,3 +10,4 @@ cmake/dependency-patches/*.patch text eol=lf -whitespace
 /cmake/*.cmake text eol=lf
 /vcpkg/triplets/*.cmake text eol=lf
 /.github/workflows/*.yml text eol=lf
+/os/android/scripts/windows/*.bat text eol=crlf
