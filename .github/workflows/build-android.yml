@@ -111,6 +111,43 @@ jobs:
           echo "ANDROID_NDK=$(cygpath -u "$ANDROID_HOME")/ndk/$NDK_VER" >> "$GITHUB_ENV"
           echo "JAVA_HOME=$(cygpath -u "$JAVA_HOME")" >> "$GITHUB_ENV"
 
+      # Compiler cache. The recompiled game is ~90 very large sources that rarely
+      # change between commits; with the cache only the changed files compile
+      # again, and the ThinLTO caches let the link reuse unchanged modules. A
+      # run restores the newest cache for its CPU target and saves its own when
+      # it succeeds. Caches unused for 7 days expire; the next build is then a
+      # full one again.
+      - name: Install ccache
+        run: |
+          set -euo pipefail
+          v=4.10.2
+          curl -fsSL -o "$RUNNER_TEMP/ccache.zip" "https://github.com/ccache/ccache/releases/download/v$v/ccache-$v-windows-x86_64.zip"
+          echo "6252f081876a9a9f700fae13a5aec5d0d486b28261d7f1f72ac11c7ad9df4da9  $RUNNER_TEMP/ccache.zip" | sha256sum -c -
+          unzip -q -o "$RUNNER_TEMP/ccache.zip" -d "$RUNNER_TEMP"
+          dir="$RUNNER_TEMP/ccache-$v-windows-x86_64"
+          cygpath -w "$dir" >> "$GITHUB_PATH"
+          ccache_dir="$(cygpath -m "$RUNNER_TEMP")/ccache"
+          {
+            echo "LIBERTY_CCACHE=1"
+            echo "CCACHE_DIR=$ccache_dir"
+            echo "CCACHE_MAXSIZE=5G"
+            echo "CCACHE_COMPRESS=1"
+            # The checkout path is the same every run; build paths stay as they are.
+            echo "CCACHE_NOHASHDIR=1"
+          } >> "$GITHUB_ENV"
+          "$dir/ccache.exe" --version | head -1
+
+      - name: Restore build caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/ccache
+            out/build/android-arm64*/thinlto-cache
+            out/build/android-arm64*/thinlto-cache-renderer
+          key: native-${{ env.ANDROID_CPU }}-${{ env.BUILD_TYPE }}-${{ github.sha }}
+          restore-keys: |
+            native-${{ env.ANDROID_CPU }}-${{ env.BUILD_TYPE }}-
+
       - name: Show toolchain versions
         run: |
           python --version
@@ -159,7 +196,12 @@ jobs:
 
       - name: Build native libraries
         # Default jobs = CPUs - 2; the generated sources need a lot of memory each.
-        run: bash os/android/scripts/build_native.sh
+        run: |
+          ccache --zero-stats >/dev/null
+          bash os/android/scripts/build_native.sh
+          echo "== compiler cache"
+          ccache --show-stats
+          du -sh "$CCACHE_DIR" out/build/android-arm64*/thinlto-cache* 2>/dev/null || true
 
       - name: Package APK
         run: |
