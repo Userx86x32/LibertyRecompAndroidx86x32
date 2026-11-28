@@ -5,7 +5,8 @@ name: Android APK
 # (~50 MB) libraries. The APK is uploaded as a workflow artifact and, by
 # default, attached to a GitHub pre-release (download it on the phone).
 #
-# Signing (the same scheme as the hakuX fork): the repository secret
+# Signing (the same scheme as the hakuX fork, with this repository's own
+# key): the repository secret
 # DEBUG_KEYSTORE_B64 (a debug keystore, base64; store and key password
 # "android", alias androiddebugkey) signs every build with the same key, so
 # each one installs over the last. A build without it, or whose certificate
@@ -54,9 +55,9 @@ concurrency:
 env:
   NDK_VER: 29.0.14206865
   # The debug key's certificate (SHA-256): keytool -list -v -keystore
-  # debug.keystore -storepass android (the one in DEBUG_KEYSTORE_B64; the
-  # same key as the hakuX fork's builds)
-  DEBUG_CERT_SHA256: 2C3E189E307D7357133559C2A2CD8F0D9638E98C02B6E9ECCE5B89AEF6C67C9D
+  # debug.keystore -storepass android (the one in DEBUG_KEYSTORE_B64). This
+  # repository's own key, generated for it; not the hakuX fork's.
+  DEBUG_CERT_SHA256: E33DBC07390E84B4558F84F6D3BCAA9EFB6AE7C316F69B38BAF3149A204403A1
   BUILD_TYPE: ${{ inputs.build_type || 'RelWithDebInfo' }}
   # Tuned for the Galaxy S24+ (Snapdragon 8 Gen 3) unless chosen otherwise.
   ANDROID_CPU: ${{ inputs.android_cpu || 'sm8650' }}
