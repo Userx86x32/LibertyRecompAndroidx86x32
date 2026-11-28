@@ -8,6 +8,9 @@
 #include <rex/system/xam/live_compatibility.h>
 
 #include <algorithm>
+#include <charconv>
+#include <filesystem>
+#include <optional>
 #include <cstdlib>
 #include <array>
 #include <cmath>
@@ -2410,6 +2413,52 @@ std::optional<PeerDatagram> LiveCompatibilityRuntime::ReceivePeerDatagram(
                          : std::nullopt;
 }
 
+namespace {
+
+// The XUID owning the saved games already in user_data_root, when there is
+// exactly one. Saved games live in "<XUID as 16 hex digits>/<title>/...", and
+// the XUID exists only in the identity file. That file is readable only by
+// the app, so a reinstall (which deletes it) followed by copying the saves
+// back used to give the player a new random XUID and a save folder the game
+// no longer looked in. A new identity adopts the XUID of the saves instead.
+// Folders holding no file (created and never used) do not count; with two
+// or more candidates nothing is guessed.
+std::optional<uint64_t> FindSavedGameOwner(const std::filesystem::path& user_data_root) {
+  std::error_code error;
+  std::optional<uint64_t> owner;
+  for (std::filesystem::directory_iterator it(user_data_root, error), end;
+       !error && it != end; it.increment(error)) {
+    std::error_code entry_error;
+    if (!it->is_directory(entry_error)) continue;
+    const std::string name = it->path().filename().string();
+    uint64_t xuid = 0;
+    if (name.size() != 16 ||
+        std::from_chars(name.data(), name.data() + name.size(), xuid, 16).ptr !=
+            name.data() + name.size() ||
+        !xuid) {
+      continue;
+    }
+    bool has_file = false;
+    std::error_code walk_error;
+    for (std::filesystem::recursive_directory_iterator walk(
+             it->path(), std::filesystem::directory_options::skip_permission_denied, walk_error),
+         walk_end;
+         !walk_error && walk != walk_end; walk.increment(walk_error)) {
+      std::error_code file_error;
+      if (walk->is_regular_file(file_error)) {
+        has_file = true;
+        break;
+      }
+    }
+    if (!has_file || owner == xuid) continue;
+    if (owner) return std::nullopt;  // Two owners: ambiguous.
+    owner = xuid;
+  }
+  return owner;
+}
+
+}  // namespace
+
 bool LiveCompatibilityRuntime::LoadOrCreateIdentity(const std::filesystem::path& user_data_root) {
   std::error_code error;
   std::filesystem::create_directories(user_data_root, error);
@@ -2445,9 +2494,15 @@ bool LiveCompatibilityRuntime::LoadOrCreateIdentity(const std::filesystem::path&
 
   disk.magic = kIdentityMagic;
   disk.version = kIdentityVersion;
-  do {
-    disk.xuid = RandomU64() & ~0x00C0000000000000ULL;
-  } while (!disk.xuid);
+  if (const auto owner = FindSavedGameOwner(user_data_root)) {
+    disk.xuid = *owner;
+    REXSYS_INFO("New multiplayer identity adopts XUID {:016X} of the saved games in {}",
+                disk.xuid, user_data_root.string());
+  } else {
+    do {
+      disk.xuid = RandomU64() & ~0x00C0000000000000ULL;
+    } while (!disk.xuid);
+  }
   do {
     disk.machine_id = RandomU64();
   } while (!disk.machine_id);

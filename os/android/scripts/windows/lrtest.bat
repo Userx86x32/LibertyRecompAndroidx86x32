@@ -93,22 +93,20 @@ echo.
 echo Files in the backup:
 where tar >nul 2>&1 && tar -tvf "!B!\saves.tar" || dir "!B!\saves.tar"
 echo.
-rem The identity file holds the player ID that names the save folder
-rem (saves\<ID>\...). Without it a reinstall makes a new ID and the saves are
-rem not found. Only the app can read it: run-as reads it as the app (debug builds).
-echo Copying the player identity (liberty_live_identity.bin) ...
-%ADB% exec-out "run-as %PKG% cat %F%/LibertyRecomp/saves/liberty_live_identity.bin" > "!B!\liberty_live_identity.bin"
+rem The identity file holds the player ID that names the save folder. Only the
+rem app can read it; run-as can, on debug builds. Builds from 2026-11-28 on do
+rem not need it: a new identity adopts the ID of the save folder.
+%ADB% exec-out "run-as %PKG% cat %F%/LibertyRecomp/saves/liberty_live_identity.bin" > "!B!\liberty_live_identity.bin" 2>nul
 set "IDSIZE=0"
 for %%A in ("!B!\liberty_live_identity.bin") do set "IDSIZE=%%~zA"
 if "!IDSIZE!"=="88" (
-  echo Player identity copied ^(88 bytes^). The backup is complete.
+  echo Player identity copied too.
 ) else (
-  type "!B!\liberty_live_identity.bin"
-  del "!B!\liberty_live_identity.bin"
-  echo.
-  echo WARNING: the player identity could not be copied. Do NOT uninstall yet:
-  echo without it the restored saves will not be found. Send this output for help.
+  del "!B!\liberty_live_identity.bin" >nul 2>&1
+  echo The player identity file cannot be copied from this build. That is fine with
+  echo the new builds: on restore they take the player ID from the save folder.
 )
+echo Check that the list above shows your save files before you uninstall anything.
 goto end
 
 :restore
@@ -129,13 +127,15 @@ if exist "%~2\saves.tar" (
   echo No saves.tar or saves folder in "%~2".
   goto end
 )
+rem The new install's first launch made an identity with a new random ID.
+rem Remove it: the backed-up one is put back, or else the next launch makes
+rem a new identity that adopts the ID of the restored save folder.
+%ADB% shell "rm -f %F%/LibertyRecomp/saves/liberty_live_identity.bin"
 if exist "%~2\liberty_live_identity.bin" (
-  rem The first launch of the new install made a new identity: replace it.
-  %ADB% shell "rm -f %F%/LibertyRecomp/saves/liberty_live_identity.bin"
   %ADB% push "%~2\liberty_live_identity.bin" "%F%/LibertyRecomp/saves/liberty_live_identity.bin"
-  echo Player identity restored.
+  echo Saves and player identity restored.
 ) else (
-  echo WARNING: no liberty_live_identity.bin in "%~2": the game will not find these saves.
+  echo Saves restored. The next launch takes the player ID from the save folder.
 )
 %ADB% shell "ls -l %F%/LibertyRecomp/saves"
 goto end
