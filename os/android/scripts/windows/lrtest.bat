@@ -83,14 +83,18 @@ if exist "lr-backup-!N!" (
 )
 set "B=lr-backup-!N!"
 mkdir "!B!"
-echo Copying into !B! ...
-%ADB% pull "%F%/LibertyRecomp/saves" "!B!"
+echo Copying saves into !B!\saves.tar ...
+rem One archive: "adb pull" of the folder stops at the first file it cannot
+rem read (liberty_live_identity.bin is readable only by the app), tar skips it.
+%ADB% exec-out "cd %F%/LibertyRecomp && tar -cf - saves 2>/dev/null" > "!B!\saves.tar"
 for %%f in (args.txt env.txt driver.txt last_launch.txt) do %ADB% pull "%F%/%%f" "!B!\%%f" >nul 2>&1
 %ADB% pull "%F%/LibertyRecomp/native.toml" "!B!\native.toml" >nul 2>&1
 echo.
-echo Saves copied:
-dir /b /s "!B!\saves"
+echo Files in the backup:
+where tar >nul 2>&1 && tar -tvf "!B!\saves.tar" || dir "!B!\saves.tar"
 echo.
+echo liberty_live_identity.bin (the online-play identity) cannot be read over adb.
+echo It is not a save game; the game creates a new one when it is missing.
 echo Check that the list above shows your save files before you uninstall anything.
 goto end
 
@@ -100,14 +104,19 @@ if "%~2"=="" (
   echo Usage: lrtest restore lr-backup-N
   goto end
 )
-if not exist "%~2\saves" (
-  echo "%~2\saves" not found.
-  goto end
-)
 echo Close the game first; restoring overwrites saves with the same names.
 %ADB% shell am force-stop %PKG%
 %ADB% shell "mkdir -p %F%/LibertyRecomp"
-%ADB% push "%~2\saves" "%F%/LibertyRecomp/"
+if exist "%~2\saves.tar" (
+  %ADB% push "%~2\saves.tar" "%F%/saves.tar"
+  %ADB% shell "cd %F%/LibertyRecomp && tar -xf ../saves.tar && rm ../saves.tar && ls -l saves"
+  goto end
+)
+if exist "%~2\saves" (
+  %ADB% push "%~2\saves" "%F%/LibertyRecomp/"
+  goto end
+)
+echo No saves.tar or saves folder in "%~2".
 goto end
 
 :stop
