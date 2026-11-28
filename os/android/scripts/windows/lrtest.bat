@@ -93,9 +93,22 @@ echo.
 echo Files in the backup:
 where tar >nul 2>&1 && tar -tvf "!B!\saves.tar" || dir "!B!\saves.tar"
 echo.
-echo liberty_live_identity.bin (the online-play identity) cannot be read over adb.
-echo It is not a save game; the game creates a new one when it is missing.
-echo Check that the list above shows your save files before you uninstall anything.
+rem The identity file holds the player ID that names the save folder
+rem (saves\<ID>\...). Without it a reinstall makes a new ID and the saves are
+rem not found. Only the app can read it: run-as reads it as the app (debug builds).
+echo Copying the player identity (liberty_live_identity.bin) ...
+%ADB% exec-out "run-as %PKG% cat %F%/LibertyRecomp/saves/liberty_live_identity.bin" > "!B!\liberty_live_identity.bin"
+set "IDSIZE=0"
+for %%A in ("!B!\liberty_live_identity.bin") do set "IDSIZE=%%~zA"
+if "!IDSIZE!"=="88" (
+  echo Player identity copied ^(88 bytes^). The backup is complete.
+) else (
+  type "!B!\liberty_live_identity.bin"
+  del "!B!\liberty_live_identity.bin"
+  echo.
+  echo WARNING: the player identity could not be copied. Do NOT uninstall yet:
+  echo without it the restored saves will not be found. Send this output for help.
+)
 goto end
 
 :restore
@@ -109,14 +122,22 @@ echo Close the game first; restoring overwrites saves with the same names.
 %ADB% shell "mkdir -p %F%/LibertyRecomp"
 if exist "%~2\saves.tar" (
   %ADB% push "%~2\saves.tar" "%F%/saves.tar"
-  %ADB% shell "cd %F%/LibertyRecomp && tar -xf ../saves.tar && rm ../saves.tar && ls -l saves"
-  goto end
-)
-if exist "%~2\saves" (
+  %ADB% shell "cd %F%/LibertyRecomp && tar -xf ../saves.tar && rm ../saves.tar"
+) else if exist "%~2\saves" (
   %ADB% push "%~2\saves" "%F%/LibertyRecomp/"
+) else (
+  echo No saves.tar or saves folder in "%~2".
   goto end
 )
-echo No saves.tar or saves folder in "%~2".
+if exist "%~2\liberty_live_identity.bin" (
+  rem The first launch of the new install made a new identity: replace it.
+  %ADB% shell "rm -f %F%/LibertyRecomp/saves/liberty_live_identity.bin"
+  %ADB% push "%~2\liberty_live_identity.bin" "%F%/LibertyRecomp/saves/liberty_live_identity.bin"
+  echo Player identity restored.
+) else (
+  echo WARNING: no liberty_live_identity.bin in "%~2": the game will not find these saves.
+)
+%ADB% shell "ls -l %F%/LibertyRecomp/saves"
 goto end
 
 :stop
