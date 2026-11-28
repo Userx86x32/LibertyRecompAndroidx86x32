@@ -116,7 +116,20 @@ REXCVAR_DEFINE_STRING(gta4_present_mode, "vsync", "GTA IV/Graphics/Display",
                       "Vertical sync: vsync is On; immediate is Off; auto/mailbox are legacy modes")
     .allowed({"auto", "vsync", "fifo", "mailbox", "immediate"});
 // Android: 30 FPS with VSync divides the 60 Hz panel evenly.
-REXCVAR_DEFINE_UINT32(gta4_frame_limit, REX_PLATFORM_ANDROID ? 30 : 60, "GTA IV/Graphics/Display",
+// LIBERTY_ANDROID_SM8650 (build_native.sh, ANDROID_CPU=sm8650): defaults for a
+// Snapdragon 8 Gen 3 / Adreno 750 phone. Its GPU has headroom the Adreno 650
+// defaults leave unused and the CPU is what limits the frame rate, so the
+// defaults that cost only GPU time are raised (60 FPS cap, SMAA, 512 shadow
+// base, 16x anisotropic filtering in core/options.cpp); those that cost CPU
+// time (population, draw distance) stay as they are. All of them remain
+// choices in the Display menu.
+#if defined(LIBERTY_ANDROID_SM8650)
+#define LIBERTY_ANDROID_DEFAULT(handheld, sm8650, desktop) (sm8650)
+#else
+#define LIBERTY_ANDROID_DEFAULT(handheld, sm8650, desktop) \
+  (REX_PLATFORM_ANDROID ? (handheld) : (desktop))
+#endif
+REXCVAR_DEFINE_UINT32(gta4_frame_limit, LIBERTY_ANDROID_DEFAULT(30, 60, 60), "GTA IV/Graphics/Display",
                       "Maximum game and host presentation rate: 0 is unlocked; caps are 30, 40, 60, and "
                       "120 FPS")
     .allowed({"0", "30", "40", "60", "120"});
@@ -142,7 +155,7 @@ REXCVAR_DEFINE_DOUBLE(gta4_native_auto_hdr_shoulder_power, 2.5,
                       "Auto HDR highlight shoulder exponent")
     .range(1.0, 10.0);
 
-REXCVAR_DEFINE_UINT32(gta4_shadow_map_base_size, REX_PLATFORM_ANDROID ? 256 : 512,
+REXCVAR_DEFINE_UINT32(gta4_shadow_map_base_size, LIBERTY_ANDROID_DEFAULT(256, 512, 512),
                       "GTA IV/Graphics/Shadows",
                       "Base shadow-map size (512 creates a 4096x4096 point-shadow cache)")
     .range(256, 1024)
@@ -188,7 +201,7 @@ REXCVAR_DEFINE_STRING(gta4_reflection_capture_distance, "original",
                       "Exterior environment capture distance: near (20), original (40), extended (60), or "
                       "far (80)")
     .allowed({"near", "original", "extended", "far"});
-REXCVAR_DEFINE_STRING(gta4_native_anti_aliasing, REX_PLATFORM_ANDROID ? "fxaa" : "smaa",
+REXCVAR_DEFINE_STRING(gta4_native_anti_aliasing, LIBERTY_ANDROID_DEFAULT("fxaa", "smaa", "smaa"),
                       "GTA IV/Graphics/Anti-Aliasing",
                       "Anti-aliasing: off, fxaa, smaa, deferred MSAA, or even-factor SSAA")
     // `spatial` remains loadable as a deprecated compatibility alias. It is

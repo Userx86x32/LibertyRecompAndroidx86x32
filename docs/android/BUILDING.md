@@ -61,6 +61,10 @@ Notes:
   for the Cortex-X4, instead of the default `generic` ARMv8.2-A. That APK does not start on older
   chips such as the Snapdragon 865. `armv9-a` is deliberately not used: it emits SVE2, which these
   phones' kernels do not expose. The GitHub Actions workflow builds `sm8650` by default.
+  That build also starts from settings for the phone (60 FPS cap, SMAA, 16x anisotropic filtering,
+  512 shadow base, and `default_args_sm8650.txt` on a first launch on that chip).
+- The GitHub Actions workflow signs with the repository secret `DEBUG_KEYSTORE_B64` (a debug
+  keystore, base64) and attaches the APK to a pre-release, so every build installs over the last.
 - The build type defaults to `RelWithDebInfo` (`BUILD_TYPE=Release` builds into a separate
   folder).
 - `-DLIBERTY_ANDROID_PGO=generate` / `=<profile.profdata>` in `build_native.sh`'s configure step

@@ -1,0 +1,28 @@
+--log_level=warn
+# First-launch settings for Snapdragon 8 Gen 3 phones (Galaxy S24 family,
+# Adreno 750); other devices get default_args.txt. The CPU limits the frame
+# rate on this renderer, not the GPU, so what costs CPU time stays at the
+# handheld values and the rest is raised.
+#
+# Display settings (resolution, upscaler, VSync, frame limit, anti-aliasing,
+# draw distance, shadow resolution, reflections, motion blur) belong to the
+# in-game Display menu: a line here would override its saved choice on every
+# launch.
+--gta4_dynamic_draw_distance=true
+--gta4_dynamic_draw_distance_min=0.80
+# Sun shadows reach twice as far as on the console (the desktop default), so
+# the detailed shadow under bridges and elevated tracks no longer appears only
+# when you are almost beneath them. It adds shadow draws, which cost CPU time:
+# the first line to set back to 1.0 if 60 FPS does not hold.
+--gta4_shadow_distance_scale=2.0
+--gta4_reflection_capture_distance=near
+# Traffic and pedestrians cost CPU time per frame. 0.4 is the handheld value;
+# the console's is 1.0.
+--gta4_traffic_density_scale=0.4
+--gta4_parked_car_density_scale=0.4
+--gta4_ped_density_scale=0.4
+--gta4_scenario_ped_density_scale=0.4
+--gta4_profile_native_detailed_cpu=false
+--gta4_profile_native_detailed_gpu=false
+--gta4_native_max_queued_frames=3
+--gta4_fps_guard=0

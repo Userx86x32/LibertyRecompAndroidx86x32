@@ -22,7 +22,15 @@ REXCVAR_DEFINE_STRING(gta4_texture_filtering, "trilinear", "GTA IV/Graphics/Text
     .allowed({"bilinear", "trilinear"})
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
-REXCVAR_DEFINE_STRING(gta4_anisotropic_filtering, "1x", "GTA IV/Graphics/Texture Filtering",
+// 16x on the Snapdragon 8 Gen 3 build (see LIBERTY_ANDROID_SM8650 in
+// gta4_app.cpp): road and wall textures stay sharp at a distance for GPU time
+// the Adreno 750 has to spare.
+#if defined(LIBERTY_ANDROID_SM8650)
+#define LIBERTY_DEFAULT_ANISOTROPY "16x"
+#else
+#define LIBERTY_DEFAULT_ANISOTROPY "1x"
+#endif
+REXCVAR_DEFINE_STRING(gta4_anisotropic_filtering, LIBERTY_DEFAULT_ANISOTROPY, "GTA IV/Graphics/Texture Filtering",
                       "Material anisotropic filtering: 1x, 2x, 4x, 8x, or 16x")
     .allowed({"1x", "2x", "4x", "8x", "16x"})
     .lifecycle(rex::cvar::Lifecycle::kHotReload);

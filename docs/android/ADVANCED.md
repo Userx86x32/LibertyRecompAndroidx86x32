@@ -34,11 +34,11 @@ These are the defaults, tuned on a Retroid Pocket 5 (Snapdragon 865):
 | `--gta4_output_height_cap` | `720` | Output height. The game renders at 720p and the display scales it to the panel. `0` uses the panel resolution. *Restart.* |
 | `--gta4_native_upscaler` | `native` | `native` renders at the output resolution. `fsr1` renders below it and upscales with AMD FSR 1. *Restart.* |
 | `--gta4_fsr1_quality` | `quality` | FSR 1 render scale: `ultra_quality`, `quality` (1/1.5), `balanced` (1/1.7), `performance` (1/2). Only with `fsr1`. *Restart.* |
-| `--gta4_native_anti_aliasing` | `fxaa` | `off`, `fxaa` or `smaa`. The MSAA/SSAA modes exist but are far too heavy for a phone GPU. |
+| `--gta4_native_anti_aliasing` | `fxaa` (`smaa` on the Snapdragon 8 Gen 3 build) | `off`, `fxaa`, `smaa`, `msaa2x`, `msaa4x`, `msaa4x_smaa`, `ssaa2x`, `ssaa4x`. `fxaa` and `smaa` filter the finished image and switch live. The MSAA modes multisample only the deferred G-buffer: lighting is still computed once per pixel, so lit edges stay jagged. The SSAA modes render the whole scene with 2 or 4 times the pixels and scale it down, which is the only mode that smooths lit edges and thin distant geometry; they cost GPU time only, need the `native` upscaler, and were too heavy for the Adreno 650. MSAA and SSAA changes need a *restart*. |
 | `--gta4_frame_limit` | `30` | `0` (unlocked), `30`, `40`, `60`, `120`. On a 60 Hz panel, 30 divides evenly and gives the smoothest result. |
 | `--gta4_present_mode` | `vsync` | `vsync` or `immediate` (tearing, lower latency). |
 | `--gta4_draw_distance_scale` | `1.0` | World draw distance. `1.0` is the console's. |
-| `--gta4_dynamic_draw_distance` | `true` | Lowers the draw distance while frames miss the 30 FPS budget and restores it once there is headroom. |
+| `--gta4_dynamic_draw_distance` | `true` | Lowers the draw distance while frames miss the frame limit (up to 60 FPS; 30 when unlocked) by more than 10% and restores it once there is headroom. |
 | `--gta4_dynamic_draw_distance_min` | `0.80` | The lowest fraction of the draw distance the dynamic controller may use. Lower values can break dynamic shadows. |
 | `--gta4_shadow_map_base_size` | `256` | Shadow map base size. `256` is the console's. `512` is sharper and costs about 4 FPS in heavy scenes. *Restart.* |
 | `--gta4_shadow_distance_scale` | `1.0` | Range of the sun shadows. Values below 1.0 are raised to 1.0, because they make vehicle and pedestrian shadows sink into the ground. Above 1.0 costs GPU time. *Restart.* |

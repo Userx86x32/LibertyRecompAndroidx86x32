@@ -120,13 +120,23 @@ jobs:
 
       # Checked before the long native build, so a missing key fails early.
       - name: Signing key
+        id: signing
         env:
           KEYSTORE: ${{ secrets.DEBUG_KEYSTORE_B64 }}
         run: |
           if [ -z "$KEYSTORE" ]; then
-            echo "::error::No DEBUG_KEYSTORE_B64 secret: the APK would get a throwaway key and not install over the last build. Add the secret (the debug keystore, base64) under Settings > Secrets and variables > Actions."
-            exit 1
+            msg="No DEBUG_KEYSTORE_B64 secret: the APK would get a throwaway key and not install over the last build. Add the secret (the debug keystore, base64) under Settings > Secrets and variables > Actions."
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+              echo "::error::$msg"
+              exit 1
+            fi
+            # A push still compiles and packages, as a check of the change,
+            # but its throwaway-key APK is not published anywhere.
+            echo "::warning::$msg This run only checks that the build works; no APK is published."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
           ks="$(cygpath -m "$RUNNER_TEMP")/debug.keystore"
           echo "$KEYSTORE" | base64 -d > "$ks"
           got=$("$JAVA_HOME/bin/keytool" -list -v -keystore "$ks" -storepass android -alias androiddebugkey |
@@ -157,6 +167,7 @@ jobs:
 
       - name: Name the APK
         id: name
+        if: steps.signing.outputs.signed == 'true'
         run: |
           set -euo pipefail
           version=$(sed -n 's/.*versionName *= *"\(.*\)".*/\1/p' os/android/app/build.gradle.kts)
@@ -178,6 +189,7 @@ jobs:
           echo "tag=build-${branch}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
       - name: Keep as the run's artifact
+        if: steps.signing.outputs.signed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.name.outputs.name }}
@@ -187,7 +199,7 @@ jobs:
           retention-days: 30
 
       - name: Pre-release
-        if: github.event_name != 'workflow_dispatch' || inputs.release
+        if: steps.signing.outputs.signed == 'true' && (github.event_name != 'workflow_dispatch' || inputs.release)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

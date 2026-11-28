@@ -26,9 +26,11 @@ python "$APP_DIR/scripts/materialize_symlinks.py"
 #            armv9-a: clang then emits SVE2, which these kernels do not expose
 #            (no sve/sve2 in the hwcaps), so the game dies with SIGILL.
 #            The APK no longer starts on ARMv8.2-only chips such as the SD 865.
+#            LIBERTY_ANDROID_SM8650 also selects that phone's default
+#            settings (gta4_app.cpp): 60 FPS, SMAA, 16x anisotropic, 512 shadows.
 case "${ANDROID_CPU:-generic}" in
   generic) CPU_FLAGS="-march=armv8.2-a -fno-emulated-tls" ;;
-  sm8650)  CPU_FLAGS="-march=armv8.6-a -mtune=cortex-x4 -fno-emulated-tls" ;;
+  sm8650)  CPU_FLAGS="-march=armv8.6-a -mtune=cortex-x4 -fno-emulated-tls -DLIBERTY_ANDROID_SM8650=1" ;;
   *) echo "!! unknown ANDROID_CPU '${ANDROID_CPU}' (generic | sm8650)"; exit 1 ;;
 esac
 echo "== CPU target ${ANDROID_CPU:-generic}: $CPU_FLAGS"

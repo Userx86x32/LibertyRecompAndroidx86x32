@@ -244,6 +244,29 @@ public class LibertyActivity extends SDLActivity {
         arguments.add("--gta4_native_environment_reflection_interval=" + environment);
     }
 
+    /**
+     * The first-launch args.txt for this device: "default_args_SOC.txt" when
+     * the APK has one for the phone's chip (the SoC model in lower case, e.g.
+     * default_args_sm8650.txt for the Snapdragon 8 Gen 3), else the handheld
+     * profile.
+     */
+    private String defaultArgsAsset() {
+        if (Build.VERSION.SDK_INT >= 31 && Build.SOC_MODEL != null) {
+            String soc = Build.SOC_MODEL.toLowerCase(java.util.Locale.ROOT);
+            if (soc.matches("[a-z0-9]+")) {
+                String name = "default_args_" + soc + ".txt";
+                try {
+                    getAssets().open(name).close();
+                    Log.i(TAG, "first-launch settings: " + name);
+                    return name;
+                } catch (IOException e) {
+                    // No profile for this chip.
+                }
+            }
+        }
+        return DEFAULT_ARGS;
+    }
+
     private void prepareEnvironment() {
         File external = getExternalFilesDir(null);
         File dataRoot = external != null ? external : getFilesDir();
@@ -267,7 +290,7 @@ public class LibertyActivity extends SDLActivity {
             // First launch: start from the tuned handheld profile bundled in
             // the APK; the copy stays editable next to LibertyRecomp/.
             try {
-                copyAssetTree(getAssets(), DEFAULT_ARGS, argsFile);
+                copyAssetTree(getAssets(), defaultArgsAsset(), argsFile);
             } catch (IOException e) {
                 Log.e(TAG, "writing default args failed", e);
             }

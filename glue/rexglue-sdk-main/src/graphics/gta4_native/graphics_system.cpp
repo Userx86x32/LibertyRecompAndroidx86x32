@@ -7309,13 +7309,25 @@ void Gta4NativeGraphicsSystem::FinishPresent(NativeCommand& command,
   UpdateDynamicDrawDistance();
 }
 
+namespace {
+// The frame rate the automatic reductions defend: the frame limit, up to 60.
+// Their thresholds were fixed at 30 Hz, so with the limit raised to 60 a game
+// running at 40 counted as on target and nothing was ever reduced. Unlocked
+// (0) keeps the 30 Hz floor: there is no rate the user asked to hold.
+double AutomaticReductionTargetFps() {
+  const uint32_t limit = rex::cvar::Query<uint32_t>("gta4_frame_limit");
+  return limit ? double(std::clamp<uint32_t>(limit, 30, 60)) : 30.0;
+}
+}  // namespace
+
 void Gta4NativeGraphicsSystem::UpdateDynamicDrawDistance() {
   // Steers gta4_draw_distance_dynamic_factor from the presented frame rate,
   // measured over one-second windows. Short streaming hitches and single
   // missed frames are not draw-distance load and used to swing the factor
   // between 1.0 and the minimum every ~30 s: it now drops only while two
-  // windows in a row miss the 30 Hz target clearly, in small spaced steps,
-  // and climbs back once the last three seconds average near the target.
+  // windows in a row miss the target clearly (below 90% of it: 27 at 30 Hz),
+  // in small spaced steps, and climbs back once the last three seconds
+  // average near the target (95%: 28.5 at 30 Hz).
   if (rex::cvar::GetFlagByName("gta4_dynamic_draw_distance") != "true") {
     dynamic_draw_distance_factor_ = 1.0;
     return;
@@ -7345,13 +7357,14 @@ void Gta4NativeGraphicsSystem::UpdateDynamicDrawDistance() {
     dynamic_draw_distance_window_frames_ = 0;
     dynamic_draw_distance_window_ms_ = 0.0;
     ++dynamic_draw_distance_windows_since_drop_;
-    if (fps[0] < 27.0 && fps[1] < 27.0) {
+    const double target_fps = AutomaticReductionTargetFps();
+    if (fps[0] < target_fps * 0.9 && fps[1] < target_fps * 0.9) {
       if (dynamic_draw_distance_windows_since_drop_ >= 2) {
         factor -= 0.05;
         dynamic_draw_distance_windows_since_drop_ = 0;
       }
     } else if (dynamic_draw_distance_windows_since_drop_ >= 10 &&
-               (fps[0] + fps[1] + fps[2]) / 3.0 >= 28.5) {
+               (fps[0] + fps[1] + fps[2]) / 3.0 >= target_fps * 0.95) {
       factor += 0.02;
     }
   }
@@ -7400,10 +7413,12 @@ void Gta4NativeGraphicsSystem::UpdateFpsGuard(double interval_ms, uint64_t now, 
   // Recovery counts ~29 fps as on budget: a GPU-bound scene that settles just
   // under 30 (one 50 ms frame every few seconds) otherwise never recovers
   // and keeps shadows short indefinitely.
-  if (interval_ms > 36.0) {
+  // 36 ms and 34.5 ms at 30 Hz, scaled to the frame limit.
+  const double frame_ms = 1000.0 / AutomaticReductionTargetFps();
+  if (interval_ms > frame_ms * 1.08) {
     if (!fps_guard_slow_since_tick_) fps_guard_slow_since_tick_ = now;
     fps_guard_fast_since_tick_ = 0;
-  } else if (interval_ms <= 34.5) {
+  } else if (interval_ms <= frame_ms * 1.035) {
     if (!fps_guard_fast_since_tick_) fps_guard_fast_since_tick_ = now;
     fps_guard_slow_since_tick_ = 0;
   } else {
