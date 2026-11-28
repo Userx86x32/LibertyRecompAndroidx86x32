@@ -36,6 +36,22 @@ android {
 
     sourceSets["main"].java.srcDirs("src/main/java", sdlJavaDir)
 
+    signingConfigs {
+        // CI (.github/workflows/build-android.yml): builds are signed with the
+        // repository's debug key (LIBERTY_DEBUG_KEYSTORE, from the secret
+        // DEBUG_KEYSTORE_B64), named here explicitly: placed only in
+        // ~/.android, it is not reliably the one a runner signs with, and
+        // every build then gets its own key. Unset (a local build): the default.
+        System.getenv("LIBERTY_DEBUG_KEYSTORE")?.takeIf { it.isNotBlank() }?.let { ks ->
+            getByName("debug") {
+                storeFile = file(ks)
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isDebuggable    = true
