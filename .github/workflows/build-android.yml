@@ -2,7 +2,15 @@ name: Android APK
 
 # Builds the arm64 APK the same way as docs/android/BUILDING.md: on Windows
 # with Git Bash, NDK r29, the bundled Turnip driver and the stripped
-# (~50 MB) libraries. The APK is uploaded as a workflow artifact.
+# (~50 MB) libraries. The APK is uploaded as a workflow artifact and, by
+# default, attached to a GitHub pre-release (download it on the phone).
+#
+# Signing (the same scheme as the hakuX fork): the repository secret
+# DEBUG_KEYSTORE_B64 (a debug keystore, base64; store and key password
+# "android", alias androiddebugkey) signs every build with the same key, so
+# each one installs over the last. A build without it, or whose certificate
+# isn't DEBUG_CERT_SHA256, fails: a throwaway key's APK can't update the one
+# installed, and the reinstall it takes deletes the installed game and saves.
 # By default the native code targets the Snapdragon 8 Gen 3 (ANDROID_CPU=
 # sm8650, see build_native.sh); that APK does not start on ARMv8.2 chips.
 
@@ -27,13 +35,17 @@ on:
         type: choice
         options: [sm8650, generic]
         default: sm8650
+      release:
+        description: 'Attach the APK to a GitHub pre-release'
+        type: boolean
+        default: true
       strip:
         description: 'Strip native libraries (smaller APK, no symbols for crash backtraces)'
         type: boolean
         default: true
 
 permissions:
-  contents: read
+  contents: write   # the pre-release
 
 concurrency:
   group: build-android-${{ github.ref }}
@@ -41,6 +53,10 @@ concurrency:
 
 env:
   NDK_VER: 29.0.14206865
+  # The debug key's certificate (SHA-256): keytool -list -v -keystore
+  # debug.keystore -storepass android (the one in DEBUG_KEYSTORE_B64; the
+  # same key as the hakuX fork's builds)
+  DEBUG_CERT_SHA256: 2C3E189E307D7357133559C2A2CD8F0D9638E98C02B6E9ECCE5B89AEF6C67C9D
   BUILD_TYPE: ${{ inputs.build_type || 'RelWithDebInfo' }}
   # Tuned for the Galaxy S24+ (Snapdragon 8 Gen 3) unless chosen otherwise.
   ANDROID_CPU: ${{ inputs.android_cpu || 'sm8650' }}
@@ -102,16 +118,40 @@ jobs:
           "$JAVA_HOME/bin/java" -version 2>&1 | head -1
           ls "$ANDROID_NDK" | head -3
 
+      # Checked before the long native build, so a missing key fails early.
+      - name: Signing key
+        id: signing
+        env:
+          KEYSTORE: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            msg="No DEBUG_KEYSTORE_B64 secret: the APK would get a throwaway key and not install over the last build. Add the secret (the debug keystore, base64) under Settings > Secrets and variables > Actions."
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+              echo "::error::$msg"
+              exit 1
+            fi
+            # A push still compiles and packages, as a check of the change,
+            # but its throwaway-key APK is not published anywhere.
+            echo "::warning::$msg This run only checks that the build works; no APK is published."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          ks="$(cygpath -m "$RUNNER_TEMP")/debug.keystore"
+          echo "$KEYSTORE" | base64 -d > "$ks"
+          got=$("$JAVA_HOME/bin/keytool" -list -v -keystore "$ks" -storepass android -alias androiddebugkey |
+            sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':\r' | head -n 1)
+          if [ "$got" != "$DEBUG_CERT_SHA256" ]; then
+            echo "::error::DEBUG_KEYSTORE_B64 holds another key (certificate SHA-256 $got, expected $DEBUG_CERT_SHA256)."
+            exit 1
+          fi
+          # Named to Gradle (os/android/app/build.gradle.kts): the default
+          # debug keystore is not reliably the one a runner signs with.
+          echo "LIBERTY_DEBUG_KEYSTORE=$ks" >> "$GITHUB_ENV"
+          echo "Signing with the repository's debug key (certificate SHA-256 $got)."
+
       - name: Prepare pinned dependencies and patches
         run: python tools/setup_repo.py
-
-      # A fixed debug key, so each new CI build installs over the previous one
-      # without uninstalling (which would delete the installed game and saves).
-      - name: Restore debug signing key
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
 
       - name: Build Vulkan driver proxy
         run: bash os/android/scripts/build_driver_proxy.sh
@@ -127,19 +167,43 @@ jobs:
 
       - name: Name the APK
         id: name
+        if: steps.signing.outputs.signed == 'true'
         run: |
+          set -euo pipefail
           version=$(sed -n 's/.*versionName *= *"\(.*\)".*/\1/p' os/android/app/build.gradle.kts)
-          name="LibertyRecompAndroid-${version}-${ANDROID_CPU}-${GITHUB_SHA::7}"
-          mkdir -p dist
-          cp os/android/app/build/outputs/apk/debug/app-debug.apk "dist/$name.apk"
-          ls -la dist
+          branch="${GITHUB_REF_NAME//\//-}"
+          name="LibertyRecompAndroid-${version}-${ANDROID_CPU}-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}.apk"
+          cp os/android/app/build/outputs/apk/debug/app-debug.apk "$name"
+          # Every signer's certificate must be the debug key's.
+          jar="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)lib/apksigner.jar"
+          out=$("$JAVA_HOME/bin/java" -jar "$(cygpath -m "$jar")" verify --print-certs "$name" | tr -d '\r')
+          got=$(echo "$out" | sed -n 's/^.*certificate SHA-256 digest: //p' | tr 'a-f' 'A-F' | sort -u)
+          if [ "$got" != "$DEBUG_CERT_SHA256" ]; then
+            echo "$out"
+            echo "::error::$name is signed with certificate SHA-256 '$got', not the debug key's $DEBUG_CERT_SHA256."
+            exit 1
+          fi
+          echo "$name: signed with the debug key ($got)"
+          ls -la "$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "tag=build-${branch}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APK
+      - name: Keep as the run's artifact
+        if: steps.signing.outputs.signed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.name.outputs.name }}
-          path: dist/*.apk
+          path: ${{ steps.name.outputs.name }}
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+      - name: Pre-release
+        if: steps.signing.outputs.signed == 'true' && (github.event_name != 'workflow_dispatch' || inputs.release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.name.outputs.tag }}" "${{ steps.name.outputs.name }}" \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "LibertyRecomp Android: ${GITHUB_REF_NAME} #${GITHUB_RUN_NUMBER} (${ANDROID_CPU})" \
+            --notes "Build of \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA}, CPU target \`${ANDROID_CPU}\`. Signed with the repository's debug key: installs over earlier builds from this workflow. Coming from another signer's build (the original releases), uninstall once first; that deletes the installed game and saves."
