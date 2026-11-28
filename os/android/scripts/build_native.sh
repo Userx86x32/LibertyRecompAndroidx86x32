@@ -34,11 +34,23 @@ case "${ANDROID_CPU:-generic}" in
   *) echo "!! unknown ANDROID_CPU '${ANDROID_CPU}' (generic | sm8650)"; exit 1 ;;
 esac
 echo "== CPU target ${ANDROID_CPU:-generic}: $CPU_FLAGS"
+# LIBERTY_CCACHE=1 compiles through ccache (on PATH): unchanged sources come
+# from the cache instead of the compiler. The CI workflow keeps the cache
+# between runs. A fresh configure is needed to switch it on or off.
+LAUNCHER=()
+if [ "${LIBERTY_CCACHE:-0}" = "1" ]; then
+  CCACHE_EXE="$(command -v ccache || true)"
+  [ -n "$CCACHE_EXE" ] || { echo "!! LIBERTY_CCACHE=1 but ccache is not on PATH"; exit 1; }
+  CCACHE_EXE="$(cygpath -m "$CCACHE_EXE" 2>/dev/null || echo "$CCACHE_EXE")"
+  LAUNCHER=(-DCMAKE_C_COMPILER_LAUNCHER="$CCACHE_EXE" -DCMAKE_CXX_COMPILER_LAUNCHER="$CCACHE_EXE")
+  echo "== compiling through $CCACHE_EXE"
+fi
 # Reconfigure when the flags differ from the cached ones; a changed CPU target
 # rebuilds everything.
 if [ ! -f "$BUILD_DIR/build.ninja" ] || ! grep -qxF -- "CMAKE_CXX_FLAGS:STRING=$CPU_FLAGS" "$BUILD_DIR/CMakeCache.txt"; then
   echo "== configuring $BUILD_TYPE in $BUILD_DIR"
   cmake -S "$REPO" -B "$BUILD_DIR" -G Ninja \
+    "${LAUNCHER[@]}" \
     -DCMAKE_C_FLAGS="$CPU_FLAGS" \
     -DCMAKE_CXX_FLAGS="$CPU_FLAGS" \
     -DCMAKE_TOOLCHAIN_FILE="$REPO/toolchains/android.cmake" \
